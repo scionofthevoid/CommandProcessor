@@ -19,7 +19,7 @@ var util = require('./util.js'),
  * 		No argument may be skipped
  * 		Must adhere to predefined order
  */
-module.exports.Processor = {
+module.exports = {
 	// Valid commands
 	commands: {},
 	
@@ -27,6 +27,9 @@ module.exports.Processor = {
 	 */
 	// Add a command to the list of valid commands
 	addCommand: function(name, callback) {
+		if (name in this.commands)
+			return {err: `Command ${name} already exists. Please use a different name or directly edit the existing command.`};
+		
 		this.commands[name] = Command({
 			"name": name,
 			"callback": callback,
@@ -141,8 +144,8 @@ var Command = function(data) {
 		// Add a parameter to the command
 		addParam: function(parameter) {
 			switch (typeof parameter) {
-				case 'string':
-					// Parameters are expected as --variable[=value] or -flag
+				case "string":
+					// Parameters are built from strings that look like --variable[=dataType[,default]] or -flag[,default]
 					if (parameter.indexOf("--") == 0) {
 						// Extract type, name, and data type
 						var nameEnd = parameter.indexOf("=");
@@ -151,7 +154,10 @@ var Command = function(data) {
 						
 						var name = parameter.substring(2, nameEnd),
 							aliases = {};
-						aliases[name] = "--";
+						aliases[name] = {
+							"type": "--",
+							"default": undefined
+						};
 						
 						this["params"].push(Parameter({
 							"info": {
@@ -166,7 +172,10 @@ var Command = function(data) {
 					} else if (parameter.indexOf("-") == 0) {
 						var name = parameter.charAt(1),
 							aliases = {};
-						aliases[name] = "-";
+						aliases[name] = {
+							"type": "-",
+							"default": undefined
+						};
 						
 						this["params"].push(Parameter({
 							"info": {
@@ -186,7 +195,9 @@ var Command = function(data) {
 					break;
 				
 				case "object":
+					parameter["position"] = this["params"].length;
 					this["params"].append(Parameter(parameter));
+					break;
 				
 				default:
 					break;
@@ -245,32 +256,44 @@ var Parameter = function(data) {
 		"info": data["info"],
 		"aliases": data["aliases"], // Map alias name to flag ("-") or variable ("--")
 		"position": data["position"],
-		"default": data["default"],
 		"dataType": data["dataType"],
 		"range": data["range"],
 		"format": data["format"],
 		
 		
+		/* Getters to simplify access into "aliases"
+		 */
+		// Type of Parameter alias ("-" for Flags and "--" for Variables)
+		getType: function(alias) {
+			return this["aliases"][alias]["type"];
+		},
+		
+		// Get a default input
+		getDefault: function(alias) {
+			return this["aliases"][alias]["default"];
+		},
+		
+		
 		/* Set Parameter properties
 		 */
-		setDefault: function(defaultValue) {
+		// Set a default value for a given alias
+		setDefault: function(alias, defaultValue) {
 			if (!this["dataType"])
 				return {err: 'Data type not set'};
 			
 			if (this["format"] && !(new RegExp(this["format"]).test(defaultValue)))
 				return {err: `${defaultValue} does not match the specified format`};
 			
-			if (this["dataType"] != typeof defaultValue)
-				return {err: `Invalid data type for default value ${defaultValue}: Expected ${this["dataType"]}`};
-			
+			// Test for convertibility
 			var value = this.convert(defaultValue);
 			if (value.err)
 				return value;
 			
-			this["default"] = value;
+			this["aliases"][alias]["default"] = defaultValue;
 			return true;
 		},
 		
+		// Set the expected data type
 		setDataType: function(type) {
 			switch(type) {
 				case "boolean":
@@ -286,7 +309,11 @@ var Parameter = function(data) {
 			}
 		},
 		
+		// Set a range of values
 		setRange: function(rangeStr) {
+			if (!this["dataType"] || this["dataType"] != "number")
+				return {err: "Cannot set range for non-numerical data type"};
+			
 			var range = util.Range(rangeStr);
 			if (range.err)
 				return range;
@@ -308,15 +335,23 @@ var Parameter = function(data) {
 		 */
 		// Performs verification of input(s)
 		validate: function(name, data) {
-			if (this["aliases"][name] != data.type)
+			if (this.getType(name) != data.type)
 				return {err: `'${name}' given as '${util.typeName[data.type]}' but expected '${util.typeName[this["aliases"][name]]}'`};
 			
 			switch(data.type) {
 				case "-":
-					data.value = this["default"];
+					data.value = this.getDefault(name);
 					break;
 				
 				case "--":
+					if (!data.value) {
+						data.value = this.getDefault(name);
+						if (!data.value)
+							return {err: `No default value set for ${name}`};
+						
+						break;
+					}
+					
 					if (this["format"] && !(new RegExp(this["format"]).test(data.value)))
 						return {err: `'${data.value}' not of expected format '${this["format"]}'`};
 					
@@ -329,11 +364,6 @@ var Parameter = function(data) {
 			return [this["position"], this.convert(data.value)];
 		},
 		
-		// Get a default input
-		getDefault: function() {
-			return [this["position"], this.convert(this["default"])];
-		},
-		
 		// Converts input to valid data type (assuming that all inputs are strings)
 		convert: function(input) {
 			switch(this["dataType"]) {
@@ -341,7 +371,6 @@ var Parameter = function(data) {
 					return input == "true";
 				
 				case "string":
-					
 					return input;
 				
 				case "number":
@@ -372,7 +401,6 @@ var Parameter = function(data) {
 				"info": this["info"],
 				"aliases": this["aliases"],
 				"position": this["position"],
-				"default": this["default"],
 				"range": this["range"] || "",
 				"format": this["format"]
 			});
