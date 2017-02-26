@@ -154,17 +154,26 @@ var Command = function(data) {
 						aliases[name] = "--";
 						
 						this["params"].push(Parameter({
+							"info": {
+								"name": "",
+								"description": ""
+							},
 							"aliases": aliases,
 							"position": this["params"].length,
 							"dataType": (nameEnd == parameter.length ? "" : parameter.substring(nameEnd + 1)),
 							"range": ""
 						}));
 					} else if (parameter.indexOf("-") == 0) {
-						var name = parameter.charAt(1);
+						var name = parameter.charAt(1),
+							aliases = {};
+						aliases[name] = "-";
+						
 						this["params"].push(Parameter({
-							"aliases": {
-								name: "-"
+							"info": {
+								"name": "",
+								"description": ""
 							},
+							"aliases": aliases,
 							"position": this["params"].length,
 							// Flags are by default boolean
 							"dataType": "boolean",
@@ -233,6 +242,7 @@ var Parameter = function(data) {
 	}
 	
 	return {
+		"info": data["info"],
 		"aliases": data["aliases"], // Map alias name to flag ("-") or variable ("--")
 		"position": data["position"],
 		"default": data["default"],
@@ -359,6 +369,7 @@ var Parameter = function(data) {
 		// Get a JSON dump of the Parameter
 		toJSON: function() {
 			return JSON.stringify({
+				"info": this["info"],
 				"aliases": this["aliases"],
 				"position": this["position"],
 				"default": this["default"],
